@@ -17,6 +17,8 @@ export interface CityData {
   roads: ParsedWay[];
   parks: ParsedWay[];
   water: ParsedWay[];
+  landuse: ParsedWay[];
+  amenities: ParsedWay[];
 }
 
 export async function geocode(address: string): Promise<LocationData> {
@@ -46,11 +48,12 @@ export async function fetchOSM(lat: number, lon: number): Promise<CityData> {
     [out:json][timeout:25];
     (
       way["building"](${bbox});
-      way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|pedestrian|living_street)$"](${bbox});
+      way["amenity"](${bbox});
+      way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|pedestrian|living_street|footway|path|cycleway)$"](${bbox});
       way["leisure"~"^(park|garden|pitch)$"](${bbox});
-      way["natural"~"^(water|wood|scrub|beach)$"](${bbox});
+      way["natural"~"^(water|wood|scrub|beach|sand|bare_rock|cliff|coastline|hill|ridge)$"](${bbox});
       way["waterway"](${bbox});
-      way["landuse"~"^(grass|forest|recreation_ground)$"](${bbox});
+      way["landuse"~"^(grass|forest|recreation_ground|commercial|industrial|residential)$"](${bbox});
     );
     out body;
     >;
@@ -74,7 +77,9 @@ function parseOSM(data: any, centerLat: number, centerLon: number): CityData {
     buildings: [],
     roads: [],
     parks: [],
-    water: []
+    water: [],
+    landuse: [],
+    amenities: []
   };
 
   if (!data || !data.elements) return result;
@@ -117,15 +122,30 @@ function parseOSM(data: any, centerLat: number, centerLon: number): CityData {
       result.buildings.push(parsedWay);
     } else if (parsedWay.tags.highway) {
       result.roads.push(parsedWay);
-    } else if (parsedWay.tags.natural === 'water' || parsedWay.tags.waterway) {
-      result.water.push(parsedWay);
+    } else if (parsedWay.tags.natural === 'water' || parsedWay.tags.waterway || parsedWay.tags.natural === 'coastline') {
+      const isRiver = parsedWay.tags.waterway === 'river' || parsedWay.tags.waterway === 'stream' || parsedWay.tags.water === 'river' || parsedWay.tags.waterway === 'canal' || parsedWay.tags.waterway === 'riverbank';
+      if (!isRiver) {
+        result.water.push(parsedWay);
+      }
     } else if (
       parsedWay.tags.leisure || 
-      parsedWay.tags.landuse || 
       parsedWay.tags.natural === 'wood' || 
-      parsedWay.tags.natural === 'scrub'
+      parsedWay.tags.natural === 'scrub' ||
+      parsedWay.tags.natural === 'beach' ||
+      parsedWay.tags.natural === 'sand' ||
+      parsedWay.tags.natural === 'bare_rock' ||
+      parsedWay.tags.natural === 'cliff' ||
+      parsedWay.tags.natural === 'hill' ||
+      parsedWay.tags.natural === 'ridge' ||
+      parsedWay.tags.landuse === 'grass' ||
+      parsedWay.tags.landuse === 'forest' ||
+      parsedWay.tags.landuse === 'recreation_ground'
     ) {
       result.parks.push(parsedWay);
+    } else if (parsedWay.tags.amenity) {
+      result.amenities.push(parsedWay);
+    } else if (parsedWay.tags.landuse) {
+      result.landuse.push(parsedWay);
     }
   }
 

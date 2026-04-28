@@ -1,15 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Sky, Environment } from '@react-three/drei';
 import { SearchUI } from './components/SearchUI';
 import { CityScene } from './components/CityScene';
+import { EnvironmentCycle } from './components/EnvironmentCycle';
+import { TimeSlider } from './components/TimeSlider';
+import { InfoBox } from './components/InfoBox';
+import { ViewModeToggle } from './components/ViewModeToggle';
+import { CustomControls } from './components/CustomControls';
+import { MiniMap } from './components/MiniMap';
 import { fetchOSM, CityData, LocationData } from './lib/osm';
 import { AlertCircle } from 'lucide-react';
 
+const randomOffsetLat = (Math.random() - 0.5) * 0.01;
+const randomOffsetLon = (Math.random() - 0.5) * 0.01;
+
 const DEFAULT_LOCATION: LocationData = {
-  lat: 59.3280, 
-  lon: 18.0728,
-  displayName: "Stockholm"
+  lat: 59.3280 + randomOffsetLat, 
+  lon: 18.0728 + randomOffsetLon,
+  displayName: "Stockholm (Randomized)"
 };
 
 export default function App() {
@@ -40,67 +48,40 @@ export default function App() {
   }, [location.lat, location.lon]);
 
   return (
-    <div className="w-full h-screen bg-slate-50 overflow-hidden relative font-sans">
+    <div className="w-full h-screen bg-slate-900 overflow-hidden relative font-sans">
       <SearchUI 
         onLocationSelect={setLocation} 
         isLoading={isLoading} 
         currentLocName={location.displayName} 
       />
+      <ViewModeToggle />
+      <TimeSlider />
+      <InfoBox />
+      <MiniMap currentLocation={location} onLocationSelect={setLocation} />
 
       {error ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/80 backdrop-blur-sm z-20 px-6">
-          <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
-          <h2 className="text-xl font-semibold text-slate-800 mb-2 text-center">Connection Error</h2>
-          <p className="text-slate-600 text-center max-w-md">{error}</p>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm z-20 px-6">
+          <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
+          <h2 className="text-xl font-semibold text-white mb-2 text-center">Connection Error</h2>
+          <p className="text-slate-300 text-center max-w-md">{error}</p>
           <button 
             onClick={() => setLocation({...location})} 
-            className="mt-6 px-6 py-2.5 bg-indigo-500 text-white font-medium rounded-xl hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-500/30"
+            className="mt-6 px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/30"
           >
             Try Again
           </button>
         </div>
       ) : null}
 
-      <div className="absolute inset-0 z-0">
-        <Canvas shadows camera={{ position: [0, 400, 600], fov: 45 }}>
+      <div className="absolute inset-0 z-0 bg-[#0f172a]">
+        <Canvas shadows camera={{ position: [0, 400, 600], fov: 45, near: 10, far: 3000 }}>
           
-          <ambientLight intensity={0.5} />
-          <directionalLight
-            castShadow
-            position={[500, 1000, 200]}
-            intensity={1.5}
-            shadow-mapSize={[2048, 2048]}
-            shadow-camera-near={1}
-            shadow-camera-far={2000}
-            shadow-camera-left={-800}
-            shadow-camera-right={800}
-            shadow-camera-top={800}
-            shadow-camera-bottom={-800}
-          />
-          <directionalLight position={[-500, 400, -200]} intensity={0.3} color="#bae6fd" />
-          
-          <Sky 
-            sunPosition={[500, 200, 200]} 
-            turbidity={0.2}
-            rayleigh={0.1}
-            mieCoefficient={0.005}
-            mieDirectionalG={0.8}
-          />
-          
-          <Environment preset="city" />
-          <fog attach="fog" args={['#e2e8f0', 200, 1500]} />
+          <EnvironmentCycle />
+          <fog attach="fog" args={['#0f172a', 200, 1500]} />
 
           <CityScene data={cityData} />
           
-          <OrbitControls 
-            makeDefault
-            enableDamping 
-            dampingFactor={0.05}
-            maxPolarAngle={Math.PI / 2 - 0.05} 
-            minDistance={50}
-            maxDistance={1500}
-            target={[0, 0, 0]}
-          />
+          <CustomControls />
         </Canvas>
       </div>
     </div>

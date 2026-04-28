@@ -1,0 +1,6 @@
+{
+  "name": "Reality",
+  "description": "Explore beautifully rendered 3D environments generated from OpenStreetMap data. Search any location, navigate with touch gestures, and visualize cities like architectural models.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -123,10 +123,7 @@ function parseOSM(data: any, centerLat: number, centerLon: number): CityData {
     } else if (parsedWay.tags.highway) {
       result.roads.push(parsedWay);
     } else if (parsedWay.tags.natural === 'water' || parsedWay.tags.waterway || parsedWay.tags.natural === 'coastline') {
-      const isRiver = parsedWay.tags.waterway === 'river' || parsedWay.tags.waterway === 'stream' || parsedWay.tags.water === 'river' || parsedWay.tags.waterway === 'canal' || parsedWay.tags.waterway === 'riverbank';
-      if (!isRiver) {
-        result.water.push(parsedWay);
-      }
+      result.water.push(parsedWay);
     } else if (
       parsedWay.tags.leisure || 
       parsedWay.tags.natural === 'wood' || 

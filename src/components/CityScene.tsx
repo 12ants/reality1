@@ -71,77 +71,11 @@ function useInteraction(way: ParsedWay) {
   };
 }
 
-function createRoadGeometry(points: THREE.Vector3[], topWidth: number, bottomWidth: number, height: number = 0.05) {
-  if (points.length < 2) return null;
-  const positions: number[] = [];
-  const indices: number[] = [];
-
-  for (let i = 0; i < points.length; i++) {
-    let dir = new THREE.Vector3();
-    if (i === 0) {
-      dir.subVectors(points[1], points[0]).normalize();
-    } else if (i === points.length - 1) {
-      dir.subVectors(points[i], points[i - 1]).normalize();
-    } else {
-      const v1 = new THREE.Vector3().subVectors(points[i], points[i - 1]).normalize();
-      const v2 = new THREE.Vector3().subVectors(points[i + 1], points[i]).normalize();
-      dir.addVectors(v1, v2).normalize();
-      if (dir.lengthSq() < 0.001) {
-        // Fallback for 180 degree turns
-        dir.copy(new THREE.Vector3(v1.z, 0, -v1.x).normalize());
-      }
-    }
-    
-    // Normal to the path on the XZ plane
-    const rightTop = new THREE.Vector3(dir.z, 0, -dir.x).normalize().multiplyScalar(topWidth / 2);
-    const rightBottom = new THREE.Vector3(dir.z, 0, -dir.x).normalize().multiplyScalar(bottomWidth / 2);
-    
-    // Miter scaling factor to keep width consistent at corners
-    let miter = 1;
-    if (i > 0 && i < points.length - 1) {
-      const v1 = new THREE.Vector3().subVectors(points[i], points[i - 1]).normalize();
-      const dot = dir.dot(v1);
-      if (dot > 0) {
-        miter = 1 / dot;
-        // Cap miter to avoid huge spikes at sharp turns
-        if (miter > 3) miter = 3;
-      }
-    }
-    rightTop.multiplyScalar(miter);
-    rightBottom.multiplyScalar(miter);
-
-    positions.push(
-      points[i].x - rightBottom.x, points[i].y, points[i].z - rightBottom.z,
-      points[i].x - rightTop.x, points[i].y + height, points[i].z - rightTop.z,
-      points[i].x + rightTop.x, points[i].y + height, points[i].z + rightTop.z,
-      points[i].x + rightBottom.x, points[i].y, points[i].z + rightBottom.z
-    );
-
-    if (i < points.length - 1) {
-      const base = i * 4;
-      const next = (i + 1) * 4;
-
-      // Left bevel
-      indices.push(base, next, next + 1, base, next + 1, base + 1);
-      // Top surface
-      indices.push(base + 1, next + 1, next + 2, base + 1, next + 2, base + 2);
-      // Right bevel
-      indices.push(base + 2, next + 2, next + 3, base + 2, next + 3, base + 3);
-    }
-  }
-
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geom.setIndex(indices);
-  geom.computeVertexNormals();
-  return geom;
-}
-
 const Building = memo(({ way }: { way: ParsedWay }) => {
   const { isHighlighted, handlers } = useInteraction(way);
 
-  const { shape, height, extrudeArgs, matProps, levels } = useMemo(() => {
-    if (way.points.length < 3) return { shape: null, height: 0, extrudeArgs: null, matProps: null, levels: 1 };
+  const { shape, height, extrudeArgs, matProps } = useMemo(() => {
+    if (way.points.length < 3) return { shape: null, height: 0, extrudeArgs: null, matProps: null };
     
     const shape = new THREE.Shape();
     way.points.forEach((p, i) => {
@@ -155,14 +89,8 @@ const Building = memo(({ way }: { way: ParsedWay }) => {
       shape.lineTo(firstP.x, firstP.y);
     }
 
-    let parsedLevels = way.tags['building:levels'] ? parseInt(way.tags['building:levels']) : 1;
-    if (isNaN(parsedLevels) || parsedLevels < 1) parsedLevels = 1;
-    
-    // First floor is taller
-    const firstFloorHeight = 5;
-    const standardFloorHeight = 3.5;
-    
-    const height = firstFloorHeight + ((parsedLevels - 1) * standardFloorHeight) + (Math.random() * 1);
+    const levels = way.tags['building:levels'] ? parseInt(way.tags['building:levels']) : 1;
+    const height = (levels * 4) + (Math.random() * 2);
 
     const extrudeArgs: [THREE.Shape, any] = [shape, { depth: height, bevelEnabled: false }];
 
@@ -209,7 +137,7 @@ const Building = memo(({ way }: { way: ParsedWay }) => {
     
     const lineCol = new THREE.Color(baseCols[way.id % baseCols.length]).offsetHSL(0, 0, 0.15);
 
-    return { shape, height, extrudeArgs, matProps: { color: col, roughness: rough, metalness: met, lineCol }, levels: parsedLevels };
+    return { shape, height, extrudeArgs, matProps: { color: col, roughness: rough, metalness: met, lineCol } };
   }, [way]);
 
   // Create the Edge geometry explicitly so we don't instantiate new Geometries in args every render
@@ -218,27 +146,6 @@ const Building = memo(({ way }: { way: ParsedWay }) => {
     const baseGeom = new THREE.ExtrudeGeometry(extrudeArgs[0], extrudeArgs[1]);
     return new THREE.EdgesGeometry(baseGeom);
   }, [shape, extrudeArgs]);
-
-  // Create facade lines to indicate floor levels
-  const facadeLinesGeometry = useMemo(() => {
-    if (levels <= 1 || !way.points.length) return null;
-    const positions: number[] = [];
-    const firstFloorHeight = 5;
-    const standardFloorHeight = 3.5;
-    
-    for (let hIndex = 1; hIndex < levels; hIndex++) {
-      const h = firstFloorHeight + (hIndex - 1) * standardFloorHeight;
-      for (let i = 0; i < way.points.length; i++) {
-        const pt1 = way.points[i];
-        const pt2 = way.points[(i + 1) % way.points.length];
-        positions.push(pt1.x, pt1.y, h);
-        positions.push(pt2.x, pt2.y, h);
-      }
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    return geom;
-  }, [way.points, levels]);
 
   if (!shape || !extrudeArgs || !edgesGeometry || !matProps) return null;
 
@@ -261,11 +168,6 @@ const Building = memo(({ way }: { way: ParsedWay }) => {
       <lineSegments geometry={edgesGeometry}>
         <lineBasicMaterial color={isHighlighted ? "#c7d2fe" : matProps.lineCol} opacity={isHighlighted ? 1 : 0.6} transparent />
       </lineSegments>
-      {facadeLinesGeometry && (
-        <lineSegments geometry={facadeLinesGeometry}>
-          <lineBasicMaterial color={isHighlighted ? "#c7d2fe" : matProps.lineCol} opacity={isHighlighted ? 0.8 : 0.4} transparent />
-        </lineSegments>
-      )}
     </mesh>
   );
 });
@@ -456,7 +358,7 @@ const Road = memo(({ way }: { way: ParsedWay }) => {
 
   const dashedPoints = useMemo(() => {
     if (way.points.length < 2) return [];
-    const baseHeight = isBridge ? 4.56 : 0.11;
+    const baseHeight = isBridge ? 4.6 : 0.06;
     return way.points.map(p => new THREE.Vector3(p.x, baseHeight, -p.y));
   }, [way, isBridge]);
 
@@ -469,8 +371,6 @@ const Road = memo(({ way }: { way: ParsedWay }) => {
 
   let color = "#64748b";
   let hasDashedCenter = false;
-  let hasPadding = false;
-  let paddingColor = "#9ea0a6";
   let defaultBaseLanes = 1;
 
   if (['motorway', 'trunk'].includes(type)) {
@@ -489,21 +389,9 @@ const Road = memo(({ way }: { way: ParsedWay }) => {
     color = "#585863"; // lighter, older asphalt
     hasDashedCenter = false; // often no center lines on small residential streets
     defaultBaseLanes = 1;
-    if (['pedestrian', 'living_street'].includes(type)) {
-      hasPadding = true;
-      paddingColor = "#9ca3af";
-    }
-  } else if (['footway', 'path', 'cycleway', 'track', 'steps', 'crossing'].includes(type)) {
-    color = type === 'track' ? "#6b5d4f" : type === 'cycleway' ? "#585863" : "#d1d5db"; // Dirt for track, asphalt for cycleway, light concrete for footway
+  } else if (['footway', 'path', 'cycleway', 'track', 'steps'].includes(type)) {
+    color = type === 'cycleway' ? "#a43333" : type === 'track' ? "#6b5d4f" : "#afb1b6"; // Dark red for cycleway, dirt for track, concrete for footway
     defaultBaseLanes = 0.5; // ~1.75m width
-    hasPadding = true;
-    paddingColor = type === 'track' ? "#4d4133" : "#9ca3af"; // border color
-  }
-
-  if (way.tags.surface === 'dirt' || way.tags.surface === 'sand' || way.tags.surface === 'earth') {
-    color = "#78350f"; // brownish
-  } else if (way.tags.surface === 'cobblestone' || way.tags.surface === 'paving_stones') {
-    color = "#9ca3af"; // lighter grey
   }
 
   const parsedLanes = parseInt(way.tags.lanes);
@@ -512,20 +400,13 @@ const Road = memo(({ way }: { way: ParsedWay }) => {
 
   // Calculate total lanes based on directionality
   let totalLaneUnits = lanes;
-  if (!isOneWay && !['footway', 'path', 'cycleway', 'track', 'steps', 'crossing'].includes(type) && isNaN(parsedLanes)) {
+  if (!isOneWay && !['footway', 'path', 'cycleway', 'track', 'steps'].includes(type) && isNaN(parsedLanes)) {
      // If not explicitly one way, and we used default lanes, double it for bidirectional
      totalLaneUnits *= 2; 
   }
   
   const laneMultiplier = 3.2; // World units scale for lanes (~3.2m per lane makes it look balanced)
   const lineWidth = Math.max(totalLaneUnits * laneMultiplier, 1.2);
-  const paddingWidth = lineWidth + 1.2; // extra padding for sides
-
-  const paddingPoints = useMemo(() => {
-    if (way.points.length < 2 || !hasPadding) return [];
-    const baseHeight = isBridge ? 4.4 : 0.04; // Slightly lower than main road height
-    return way.points.map(p => new THREE.Vector3(p.x, baseHeight, -p.y));
-  }, [way, isBridge, hasPadding]);
 
   // Calculate length for texture repeating
   const roadLength = useMemo(() => {
@@ -546,64 +427,27 @@ const Road = memo(({ way }: { way: ParsedWay }) => {
     color = "#9ca3af"; // lighter grey
   }
 
-  const jointMeshRef = useRef<THREE.InstancedMesh>(null);
-  const jointPaddingMeshRef = useRef<THREE.InstancedMesh>(null);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-
-  useLayoutEffect(() => {
-    if (jointMeshRef.current && points.length > 0) {
-      points.forEach((p, i) => {
-        dummy.position.set(p.x, p.y + 0.025, p.z);
-        dummy.rotation.set(0, 0, 0);
-        dummy.updateMatrix();
-        jointMeshRef.current!.setMatrixAt(i, dummy.matrix);
-      });
-      jointMeshRef.current.instanceMatrix.needsUpdate = true;
-    }
-    if (jointPaddingMeshRef.current && paddingPoints.length > 0) {
-      paddingPoints.forEach((p, i) => {
-        dummy.position.set(p.x, p.y + 0.01, p.z);
-        dummy.rotation.set(0, 0, 0);
-        dummy.updateMatrix();
-        jointPaddingMeshRef.current!.setMatrixAt(i, dummy.matrix);
-      });
-      jointPaddingMeshRef.current.instanceMatrix.needsUpdate = true;
-    }
-  }, [points, paddingPoints, dummy]);
-
-  const roadGeom = useMemo(() => createRoadGeometry(points, isHighlighted ? lineWidth + 1 : lineWidth, (isHighlighted ? lineWidth + 1 : lineWidth) + 0.4, 0.05), [points, lineWidth, isHighlighted]);
-  const paddingGeom = useMemo(() => createRoadGeometry(paddingPoints, isHighlighted ? paddingWidth + 1 : paddingWidth, (isHighlighted ? paddingWidth + 1 : paddingWidth) + 0.4, 0.02), [paddingPoints, paddingWidth, isHighlighted]);
-  const shadowGeom = useMemo(() => isBridge ? createRoadGeometry(shadowPoints, lineWidth * 1.5, lineWidth * 1.5 + 0.4, 0.05) : null, [shadowPoints, lineWidth, isBridge]);
-
   return (
     <group {...handlers}>
-      {hasPadding && paddingPoints.length > 0 && paddingGeom && (
-        <instancedMesh ref={jointPaddingMeshRef} args={[undefined, undefined, paddingPoints.length]}>
-          <cylinderGeometry args={[Math.max((isHighlighted ? paddingWidth + 1 : paddingWidth) / 2, 0.1), Math.max(((isHighlighted ? paddingWidth + 1 : paddingWidth) + 0.4) / 2, 0.1), 0.02, 16]} />
-          <meshBasicMaterial color={isHighlighted ? "#cbd5e1" : paddingColor} />
-        </instancedMesh>
+      {isBridge && (
+        <Line 
+          points={shadowPoints}
+          color="#000000"
+          lineWidth={lineWidth * 1.5}
+          transparent
+          opacity={0.3}
+          worldUnits
+        />
       )}
-      {hasPadding && paddingPoints.length > 0 && paddingGeom && (
-        <mesh geometry={paddingGeom}>
-          <meshBasicMaterial color={isHighlighted ? "#cbd5e1" : paddingColor} />
-        </mesh>
-      )}
-      {points.length > 0 && roadGeom && (
-        <instancedMesh ref={jointMeshRef} args={[undefined, undefined, points.length]}>
-          <cylinderGeometry args={[Math.max((isHighlighted ? lineWidth + 1 : lineWidth) / 2, 0.1), Math.max(((isHighlighted ? lineWidth + 1 : lineWidth) + 0.4) / 2, 0.1), 0.05, 16]} />
-          <meshBasicMaterial color={isHighlighted ? "#cbd5e1" : color} />
-        </instancedMesh>
-      )}
-      {isBridge && shadowGeom && (
-        <mesh geometry={shadowGeom}>
-          <meshBasicMaterial color="#000000" transparent opacity={0.3} />
-        </mesh>
-      )}
-      {points.length > 0 && roadGeom && (
-        <mesh geometry={roadGeom}>
-          <meshBasicMaterial color={isHighlighted ? "#cbd5e1" : color} />
-        </mesh>
-      )}
+      <Line 
+        points={points}
+        color={isHighlighted ? "#cbd5e1" : color}
+        lineWidth={isHighlighted ? lineWidth + 1 : lineWidth}
+        worldUnits
+        map={asphaltTexture}
+        useMap={true}
+        repeat={[repeatX, 1]}
+      />
       {hasDashedCenter && !isOneWay && (
         <Line 
           points={dashedPoints}
